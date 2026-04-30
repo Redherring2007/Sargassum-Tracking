@@ -9,6 +9,20 @@ export interface Summary {
   unread_alerts: number;
 }
 
+
+export interface Observation {
+  id: number;
+  latitude: number;
+  longitude: number;
+  observed_at?: string;
+  source_type: string;
+  source_reference?: string;
+  density_level: string;
+  estimated_area_m2?: number;
+  confidence_score: number;
+  notes?: string;
+}
+
 export interface Patch {
   id: number;
   patch_reference: string;

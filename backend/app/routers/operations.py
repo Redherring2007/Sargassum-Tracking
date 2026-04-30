@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -36,10 +36,55 @@ from app.schemas.domain import (
 from app.services.demo_seed import seed_demo_data
 from app.services.drift_prediction_service import DriftInputs, DriftPredictionService
 from app.services.ingestion_service import IngestionService
+from app.services.live_data_service import LiveDataService
 from app.services.patch_service import PatchService
 from app.services.routing_service import RoutingService
 
 router = APIRouter()
+
+
+
+
+@router.get("/live/sources", tags=["live-data"])
+def live_sources():
+    return LiveDataService().available_sources()
+
+
+@router.post("/live/ingest-observations", tags=["live-data"])
+def ingest_live_observations(
+    days: int = Query(default=120, ge=1, le=365),
+    limit: int = Query(default=75, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    return LiveDataService().ingest_live_observations(db, days=days, limit=limit)
+
+
+@router.get("/live/environment", tags=["live-data"])
+def live_environment(latitude: float, longitude: float):
+    return LiveDataService().fetch_marine_current(latitude, longitude)
+
+
+@router.post("/predictions/run-live/{patch_id}", response_model=PredictionResponse, tags=["predictions"])
+def run_live_prediction(patch_id: int, horizon_hours: int = Query(default=72, ge=1, le=240), db: Session = Depends(get_db)):
+    patch = db.get(SargassumPatch, patch_id)
+    if not patch:
+        raise HTTPException(status_code=404, detail="Patch not found")
+    live_service = LiveDataService()
+    inputs = live_service.drift_inputs_from_live_current(patch, horizon_hours=horizon_hours)
+    result = DriftPredictionService().run_prediction_for_patch(patch, inputs)
+    run = PredictionRun(
+        patch_id=patch.id,
+        horizon_hours=horizon_hours,
+        input_summary={
+            "source": "Open-Meteo Marine current",
+            "ocean_current_direction_degrees": inputs.ocean_current_direction_degrees,
+            "ocean_current_speed_knots": inputs.ocean_current_speed_knots,
+        },
+        confidence_score=result["confidence_score"],
+    )
+    db.add(run)
+    db.commit()
+    return result
 
 
 @router.get("/observations", response_model=list[ObservationRead], tags=["observations"])

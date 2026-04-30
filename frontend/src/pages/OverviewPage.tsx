@@ -12,6 +12,10 @@ export function OverviewPage() {
     await api.seedDemo();
     await data.refresh();
   };
+  const ingestLive = async () => {
+    await api.ingestLiveObservations();
+    await data.refresh();
+  };
 
   return (
     <div className="space-y-5">
@@ -20,13 +24,14 @@ export function OverviewPage() {
           <p className="text-sm uppercase tracking-wide text-cyanline">Commercial operations dashboard</p>
           <h1 className="mt-1 text-2xl font-semibold text-white md:text-3xl">Sargassum intelligence and collection command</h1>
           <p className="mt-2 max-w-3xl text-sm text-slate-400">
-            Live-ready monitoring for offshore patches, coastline risk, vessel dispatch, task cost, and client impact.
+            Live monitoring for public Sargassum sightings, current-driven drift, coastline risk, vessel dispatch, task cost, and client impact.
           </p>
         </div>
         <div className="flex gap-2">
           <button onClick={data.refresh} className="inline-flex items-center gap-2 rounded bg-white/10 px-3 py-2 text-sm text-white ring-1 ring-white/15">
             <RefreshCw size={16} /> Refresh
           </button>
+          <button onClick={ingestLive} className="rounded bg-emerald-400 px-3 py-2 text-sm font-semibold text-ink">Ingest live sightings</button>
           <button onClick={seed} className="rounded bg-cyanline px-3 py-2 text-sm font-semibold text-ink">Seed demo</button>
         </div>
       </div>

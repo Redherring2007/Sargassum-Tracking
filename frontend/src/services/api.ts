@@ -2,6 +2,7 @@ import type {
   Alert,
   ClientSite,
   CollectionZone,
+  Observation,
   Patch,
   RouteRecommendation,
   Summary,
@@ -30,7 +31,10 @@ async function postJson<T>(path: string, body?: unknown): Promise<T> {
 
 export const api = {
   seedDemo: () => postJson("/demo/seed"),
+  ingestLiveObservations: () => postJson("/live/ingest-observations?days=180&limit=100"),
+  liveSources: () => getJson("/live/sources"),
   summary: () => getJson<Summary>("/dashboard/summary"),
+  observations: () => getJson<Observation[]>("/observations"),
   patches: () => getJson<Patch[]>("/patches"),
   clientSites: () => getJson<ClientSite[]>("/client-sites"),
   vessels: () => getJson<Vessel[]>("/vessels"),

@@ -4,6 +4,7 @@ import type {
   Alert,
   ClientSite,
   CollectionZone,
+  Observation,
   Patch,
   RouteRecommendation,
   Summary,
@@ -14,6 +15,7 @@ import type {
 
 export interface OperationsData {
   summary?: Summary;
+  observations: Observation[];
   patches: Patch[];
   sites: ClientSite[];
   vessels: Vessel[];
@@ -29,6 +31,7 @@ export interface OperationsData {
 
 export function useOperationsData(): OperationsData {
   const [summary, setSummary] = useState<Summary>();
+  const [observations, setObservations] = useState<Observation[]>([]);
   const [patches, setPatches] = useState<Patch[]>([]);
   const [sites, setSites] = useState<ClientSite[]>([]);
   const [vessels, setVessels] = useState<Vessel[]>([]);
@@ -44,9 +47,10 @@ export function useOperationsData(): OperationsData {
     setLoading(true);
     setError(undefined);
     try {
-      const [summaryData, patchesData, sitesData, vesselsData, positionsData, zonesData, tasksData, alertsData, routesData] =
+      const [summaryData, observationsData, patchesData, sitesData, vesselsData, positionsData, zonesData, tasksData, alertsData, routesData] =
         await Promise.all([
           api.summary(),
+          api.observations(),
           api.patches(),
           api.clientSites(),
           api.vessels(),
@@ -57,6 +61,7 @@ export function useOperationsData(): OperationsData {
           api.routes()
         ]);
       setSummary(summaryData);
+      setObservations(observationsData);
       setPatches(patchesData);
       setSites(sitesData);
       setVessels(vesselsData);
@@ -79,7 +84,7 @@ export function useOperationsData(): OperationsData {
   }, []);
 
   return useMemo(
-    () => ({ summary, patches, sites, vessels, positions, zones, tasks, alerts, routes, loading, error, refresh }),
-    [summary, patches, sites, vessels, positions, zones, tasks, alerts, routes, loading, error]
+    () => ({ summary, observations, patches, sites, vessels, positions, zones, tasks, alerts, routes, loading, error, refresh }),
+    [summary, observations, patches, sites, vessels, positions, zones, tasks, alerts, routes, loading, error]
   );
 }

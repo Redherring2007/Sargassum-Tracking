@@ -1,7 +1,7 @@
 import L from "leaflet";
 import { useMemo, useState } from "react";
 import { CircleMarker, LayersControl, MapContainer, Marker, Polyline, Popup, TileLayer } from "react-leaflet";
-import type { ClientSite, CollectionZone, Patch, RouteRecommendation, Vessel, VesselPosition } from "../types/api";
+import type { ClientSite, CollectionZone, Observation, Patch, RouteRecommendation, Vessel, VesselPosition } from "../types/api";
 import { StatusPill } from "../components/StatusPill";
 
 const markerIcon = new L.Icon({
@@ -19,6 +19,7 @@ const severityColor: Record<string, string> = {
 };
 
 export function OperationsMap({
+  observations,
   patches,
   sites,
   zones,
@@ -26,6 +27,7 @@ export function OperationsMap({
   positions,
   routes
 }: {
+  observations: Observation[];
   patches: Patch[];
   sites: ClientSite[];
   zones: CollectionZone[];
@@ -48,6 +50,30 @@ export function OperationsMap({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         <LayersControl position="topright">
+
+          <LayersControl.Overlay checked name="Live sightings">
+            <>
+              {observations.slice(0, 250).map((observation) => (
+                <CircleMarker
+                  key={observation.id}
+                  center={[observation.latitude, observation.longitude]}
+                  radius={6}
+                  pathOptions={{ color: "#f8fafc", fillColor: "#22d3ee", fillOpacity: 0.75, weight: 1 }}
+                  eventHandlers={{ click: () => setSelected(`${observation.source_type}: ${observation.notes || "Sargassum sighting"}`) }}
+                >
+                  <Popup>
+                    <strong>Sargassum sighting</strong>
+                    <br />
+                    Source: {observation.source_type}
+                    <br />
+                    Confidence: {Math.round(observation.confidence_score * 100)}%
+                    <br />
+                    {observation.observed_at ? new Date(observation.observed_at).toLocaleDateString() : "Date unknown"}
+                  </Popup>
+                </CircleMarker>
+              ))}
+            </>
+          </LayersControl.Overlay>
           <LayersControl.Overlay checked name="Sargassum patches">
             <>
               {patches.map((patch) => (
