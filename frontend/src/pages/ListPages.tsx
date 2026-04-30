@@ -24,7 +24,7 @@ export function PredictionsPage() {
 
 export function AlertsPage() {
   const { alerts } = useOperationsData();
-  return <SimpleList title="Alerts" items={alerts.map((a) => ({ title: a.alert_type.replaceAll("_", " "), subtitle: a.message, status: a.severity, detail: a.recommended_action }))} />;
+  return <SimpleList title="Alerts" items={alerts.map((a) => ({ title: a.alert_type.replace(/_/g, " "), subtitle: a.message, status: a.severity, detail: a.recommended_action }))} />;
 }
 
 export function AdminPage() {
