@@ -1,0 +1,33 @@
+@import "leaflet/dist/leaflet.css";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  min-height: 100%;
+  background: #08111f;
+}
+
+.leaflet-container {
+  width: 100%;
+  height: 100%;
+  background: #0b1728;
+}
+
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: #101c2d;
+  color: #e5f3ff;
+  border: 1px solid rgba(56, 189, 248, 0.25);
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 7px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.35);
+  border-radius: 999px;
+}
