@@ -6,6 +6,7 @@ import type {
   CollectionZone,
   Observation,
   Patch,
+  PredictionTrack,
   RouteRecommendation,
   Summary,
   Task,
@@ -24,6 +25,7 @@ export interface OperationsData {
   tasks: Task[];
   alerts: Alert[];
   routes: RouteRecommendation[];
+  predictionTracks: PredictionTrack[];
   loading: boolean;
   error?: string;
   refresh: () => Promise<void>;
@@ -40,6 +42,7 @@ export function useOperationsData(): OperationsData {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [routes, setRoutes] = useState<RouteRecommendation[]>([]);
+  const [predictionTracks, setPredictionTracks] = useState<PredictionTrack[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
 
@@ -47,7 +50,7 @@ export function useOperationsData(): OperationsData {
     setLoading(true);
     setError(undefined);
     try {
-      const [summaryData, observationsData, patchesData, sitesData, vesselsData, positionsData, zonesData, tasksData, alertsData, routesData] =
+      const [summaryData, observationsData, patchesData, sitesData, vesselsData, positionsData, zonesData, tasksData, alertsData, routesData, predictionTrackData] =
         await Promise.all([
           api.summary(),
           api.observations(),
@@ -58,7 +61,8 @@ export function useOperationsData(): OperationsData {
           api.collectionZones(),
           api.tasks(),
           api.alerts(),
-          api.routes()
+          api.routes(),
+          api.livePredictionTracks()
         ]);
       setSummary(summaryData);
       setObservations(observationsData);
@@ -70,6 +74,7 @@ export function useOperationsData(): OperationsData {
       setTasks(tasksData);
       setAlerts(alertsData);
       setRoutes(routesData);
+      setPredictionTracks(predictionTrackData.tracks);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load operations data");
     } finally {
@@ -84,7 +89,7 @@ export function useOperationsData(): OperationsData {
   }, []);
 
   return useMemo(
-    () => ({ summary, observations, patches, sites, vessels, positions, zones, tasks, alerts, routes, loading, error, refresh }),
-    [summary, observations, patches, sites, vessels, positions, zones, tasks, alerts, routes, loading, error]
+    () => ({ summary, observations, patches, sites, vessels, positions, zones, tasks, alerts, routes, predictionTracks, loading, error, refresh }),
+    [summary, observations, patches, sites, vessels, positions, zones, tasks, alerts, routes, predictionTracks, loading, error]
   );
 }

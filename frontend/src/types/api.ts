@@ -127,3 +127,32 @@ export interface RouteRecommendation {
   action: string;
   reasoning_summary: string;
 }
+
+
+export interface PredictionPoint {
+  hour: number;
+  latitude: number;
+  longitude: number;
+}
+
+export interface PredictionTrack {
+  patch_id: number;
+  patch_reference: string;
+  severity: Severity;
+  start: { latitude: number; longitude: number };
+  future_positions: PredictionPoint[];
+  drift_polygon: { type: string; coordinates: number[][][] };
+  possible_impacts: Array<{ zone_name: string; distance_nm: number; estimated_arrival_hours: number; risk: string }>;
+  confidence_score: number;
+  environment: {
+    source: string;
+    ocean_current_direction_degrees?: number;
+    ocean_current_speed_knots?: number;
+    error?: string;
+  };
+}
+
+export interface PredictionTrackResponse {
+  horizon_hours: number;
+  tracks: PredictionTrack[];
+}

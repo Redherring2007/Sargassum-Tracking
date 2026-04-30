@@ -49,6 +49,7 @@ export function OverviewPage() {
         <KpiCard label="Tasks" value={data.summary?.active_tasks ?? "—"} subtext="Assigned or in progress" Icon={ClipboardList} />
         <KpiCard label="Alerts" value={data.summary?.unread_alerts ?? "—"} subtext="Unread operational alerts" Icon={AlertTriangle} />
         <KpiCard label="Routes" value={data.routes.length} subtext="Cost-ranked recommendations" Icon={Radar} />
+        <KpiCard label="Drift Tracks" value={data.predictionTracks.length} subtext="Live current forecast paths" Icon={Waves} />
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[1fr_420px]">

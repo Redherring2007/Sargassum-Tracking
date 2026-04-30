@@ -136,6 +136,52 @@ def run_prediction(payload: PredictionRequest, db: Session = Depends(get_db)):
     return result
 
 
+
+
+@router.get("/predictions/live-tracks", tags=["predictions"])
+def live_prediction_tracks(horizon_hours: int = Query(default=72, ge=1, le=240), db: Session = Depends(get_db)):
+    live_service = LiveDataService()
+    drift_service = DriftPredictionService()
+    tracks = []
+    for patch in db.query(SargassumPatch).order_by(SargassumPatch.severity.desc(), SargassumPatch.updated_at.desc()).all():
+        try:
+            inputs = live_service.drift_inputs_from_live_current(patch, horizon_hours=horizon_hours)
+            environment = {
+                "ocean_current_direction_degrees": inputs.ocean_current_direction_degrees,
+                "ocean_current_speed_knots": inputs.ocean_current_speed_knots,
+                "source": "Open-Meteo Marine current",
+            }
+        except Exception as exc:
+            inputs = DriftInputs(
+                wind_direction_degrees=patch.movement_direction_degrees,
+                wind_speed_knots=10,
+                ocean_current_direction_degrees=patch.movement_direction_degrees,
+                ocean_current_speed_knots=patch.movement_speed_knots,
+                horizon_hours=horizon_hours,
+            )
+            environment = {
+                "source": "patch movement fallback",
+                "error": str(exc),
+                "ocean_current_direction_degrees": inputs.ocean_current_direction_degrees,
+                "ocean_current_speed_knots": inputs.ocean_current_speed_knots,
+            }
+        result = drift_service.run_prediction_for_patch(patch, inputs)
+        tracks.append(
+            {
+                "patch_id": patch.id,
+                "patch_reference": patch.patch_reference,
+                "severity": patch.severity.value if hasattr(patch.severity, "value") else patch.severity,
+                "start": {"latitude": patch.centroid_latitude, "longitude": patch.centroid_longitude},
+                "future_positions": result["future_positions"],
+                "drift_polygon": result["drift_polygon"],
+                "possible_impacts": result["possible_impacts"],
+                "confidence_score": result["confidence_score"],
+                "environment": environment,
+            }
+        )
+    return {"horizon_hours": horizon_hours, "tracks": tracks}
+
+
 @router.get("/predictions", tags=["predictions"])
 def list_predictions(db: Session = Depends(get_db)):
     runs = db.query(PredictionRun).order_by(PredictionRun.created_at.desc()).all()

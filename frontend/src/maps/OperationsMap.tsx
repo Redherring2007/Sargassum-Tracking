@@ -1,7 +1,7 @@
 import L from "leaflet";
 import { useMemo, useState } from "react";
-import { CircleMarker, LayersControl, MapContainer, Marker, Polyline, Popup, TileLayer } from "react-leaflet";
-import type { ClientSite, CollectionZone, Observation, Patch, RouteRecommendation, Vessel, VesselPosition } from "../types/api";
+import { CircleMarker, LayersControl, MapContainer, Marker, Polygon, Polyline, Popup, TileLayer } from "react-leaflet";
+import type { ClientSite, CollectionZone, Observation, Patch, PredictionTrack, RouteRecommendation, Vessel, VesselPosition } from "../types/api";
 import { StatusPill } from "../components/StatusPill";
 
 const markerIcon = new L.Icon({
@@ -25,7 +25,8 @@ export function OperationsMap({
   zones,
   vessels,
   positions,
-  routes
+  routes,
+  predictionTracks
 }: {
   observations: Observation[];
   patches: Patch[];
@@ -34,6 +35,7 @@ export function OperationsMap({
   vessels: Vessel[];
   positions: VesselPosition[];
   routes: RouteRecommendation[];
+  predictionTracks: PredictionTrack[];
 }) {
   const [selected, setSelected] = useState<string>("Operational layer ready");
   const vesselById = useMemo(() => new Map(vessels.map((v) => [v.id, v])), [vessels]);
@@ -98,6 +100,56 @@ export function OperationsMap({
                   </Popup>
                 </CircleMarker>
               ))}
+            </>
+          </LayersControl.Overlay>
+
+          <LayersControl.Overlay checked name="Predicted drift tracks">
+            <>
+              {predictionTracks.map((track) => {
+                const line = [track.start, ...track.future_positions].map((point) => [point.latitude, point.longitude] as [number, number]);
+                const polygon = track.drift_polygon?.coordinates?.[0]?.map(([lon, lat]) => [lat, lon] as [number, number]) || [];
+                const last = track.future_positions[track.future_positions.length - 1];
+                return (
+                  <div key={track.patch_id}>
+                    {polygon.length ? (
+                      <Polygon
+                        positions={polygon}
+                        pathOptions={{ color: severityColor[track.severity], fillColor: severityColor[track.severity], fillOpacity: 0.12, weight: 2 }}
+                      />
+                    ) : null}
+                    <Polyline
+                      positions={line}
+                      pathOptions={{ color: severityColor[track.severity], weight: 5, opacity: 0.95 }}
+                      eventHandlers={{ click: () => setSelected(`${track.patch_reference}: forecast ${track.environment.ocean_current_direction_degrees ?? "?"}° at ${track.environment.ocean_current_speed_knots ?? "?"} kt`) }}
+                    />
+                    {track.future_positions.map((point) => (
+                      <CircleMarker
+                        key={`${track.patch_id}-${point.hour}`}
+                        center={[point.latitude, point.longitude]}
+                        radius={point.hour === 72 ? 8 : 5}
+                        pathOptions={{ color: severityColor[track.severity], fillColor: "#ffffff", fillOpacity: 0.9, weight: 2 }}
+                      >
+                        <Popup>
+                          <strong>{track.patch_reference}</strong>
+                          <br />
+                          Forecast hour: {point.hour}
+                          <br />
+                          Confidence: {Math.round(track.confidence_score * 100)}%
+                          <br />
+                          Current: {track.environment.ocean_current_direction_degrees ?? "?"}° / {track.environment.ocean_current_speed_knots ?? "?"} kt
+                        </Popup>
+                      </CircleMarker>
+                    ))}
+                    {last ? (
+                      <CircleMarker
+                        center={[last.latitude, last.longitude]}
+                        radius={11}
+                        pathOptions={{ color: "#ffffff", fillColor: severityColor[track.severity], fillOpacity: 0.75, weight: 2 }}
+                      />
+                    ) : null}
+                  </div>
+                );
+              })}
             </>
           </LayersControl.Overlay>
           <LayersControl.Overlay checked name="Collection zones">

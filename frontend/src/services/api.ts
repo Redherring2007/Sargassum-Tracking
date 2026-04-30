@@ -4,6 +4,7 @@ import type {
   CollectionZone,
   Observation,
   Patch,
+  PredictionTrackResponse,
   RouteRecommendation,
   Summary,
   Task,
@@ -42,5 +43,6 @@ export const api = {
   collectionZones: () => getJson<CollectionZone[]>("/collection-zones"),
   tasks: () => getJson<Task[]>("/tasks"),
   alerts: () => getJson<Alert[]>("/alerts"),
-  routes: () => getJson<RouteRecommendation[]>("/routes/recommendations")
+  routes: () => getJson<RouteRecommendation[]>("/routes/recommendations"),
+  livePredictionTracks: () => getJson<PredictionTrackResponse>("/predictions/live-tracks?horizon_hours=72")
 };
