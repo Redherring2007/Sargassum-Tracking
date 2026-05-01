@@ -39,10 +39,29 @@ from app.services.ingestion_service import IngestionService
 from app.services.live_data_service import LiveDataService
 from app.services.patch_service import PatchService
 from app.services.routing_service import RoutingService
+from app.services.spectral_detection_service import SpectralDetectionService
 
 router = APIRouter()
 
 
+
+
+
+
+@router.get("/spectral/demo", tags=["spectral-detection"])
+def spectral_detection_demo():
+    return SpectralDetectionService().run_mock_detection()
+
+
+@router.post("/spectral/detect", tags=["spectral-detection"])
+def spectral_detect(payload: dict):
+    try:
+        red = payload["red_band"]
+        nir = payload["nir_band"]
+        swir = payload["swir_band"]
+    except KeyError as exc:
+        raise HTTPException(status_code=422, detail=f"Missing required band grid: {exc.args[0]}") from exc
+    return SpectralDetectionService().run_detection(red, nir, swir)
 
 
 @router.get("/live/sources", tags=["live-data"])

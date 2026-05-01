@@ -57,6 +57,7 @@ npm run dev
 
 - Interactive map with patches, vessels, client sites, collection zones, and recommended route
 - Manual and GeoJSON ingestion endpoints
+- Sentinel-2-compatible spectral detection demo using B4/B8/B11 NDVI and FAI logic
 - Patch generation from observations
 - Drift prediction service with replaceable vector model
 - Vessel routing and cost ranking
@@ -67,3 +68,14 @@ npm run dev
 ## Deployment Notes
 
 The project is VPS-ready: keep `.env` outside source control, run PostGIS as a managed DB or container, place FastAPI behind Nginx/Caddy, and build the Vite frontend as static assets. Add JWT authentication before exposing paid client accounts.
+
+
+## Spectral Detection Demo
+
+Run the local Sentinel-2-compatible spectral detector without paid APIs:
+
+```bash
+curl http://localhost:8000/api/spectral/demo
+```
+
+The endpoint uses mock B4/B8/B11 reflectance grids, calculates NDVI and FAI, thresholds likely floating sargassum pixels, and returns GeoJSON-compatible features. It is not yet a live Copernicus image download pipeline.

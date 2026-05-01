@@ -6,7 +6,7 @@ Operational dashboard, database schema, demo data, manual ingestion, patch track
 
 ## Phase 2: Real Data Integrations
 
-Add satellite, NOAA/Copernicus/NASA ocean data, weather, drone, patrol vessel, and CSV/GeoJSON production adapters.
+Add production Sentinel-2/Copernicus scene download, cloud/glint/land masking, NOAA/Copernicus/NASA ocean data, weather, drone, patrol vessel, and CSV/GeoJSON production adapters.
 
 ## Phase 3: Better Prediction Models
 
@@ -27,3 +27,8 @@ GPS tasking, polygon mission upload, safe operating boundaries, live telemetry, 
 ## Phase 7: Commercial API
 
 API keys, rate limits, licensed data feeds, webhooks, and enterprise integrations.
+
+
+### Spectral Detection Upgrade
+
+Current foundation: local Sentinel-2-compatible B4/B8/B11 NDVI/FAI detection service with mock/demo arrays. Next step: implement authenticated or public Copernicus/ESA/NOAA scene discovery, download, atmospheric correction assumptions, masking, tiling, and scheduled ingestion into observations/patches.

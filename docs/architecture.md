@@ -21,3 +21,8 @@ Observations enter through manual reports, uploads, or future adapters. Patch se
 ## Future Upgrades
 
 Replace the MVP vector drift model with oceanographic model outputs, add raster/vector satellite detections, integrate AIS, add JWT/RBAC, and move background ingestion to Celery workers.
+
+
+## Spectral Detection
+
+`spectral_detection_service.py` adds Sentinel-2-compatible floating algae detection using B4 red, B8 NIR, and B11 SWIR reflectance grids. It calculates NDVI and FAI, applies lightweight thresholds, emits GeoJSON-compatible point features, and can convert detections into observation-like objects for later ingestion. The current implementation accepts local/mock band arrays and exposes a demo endpoint; it does not yet download Copernicus/Sentinel imagery directly.
