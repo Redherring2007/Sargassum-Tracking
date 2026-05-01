@@ -2,7 +2,7 @@
 
 ## Phase 1: MVP Map/Data/Tasking
 
-Operational dashboard, database schema, demo data, manual ingestion, patch tracking, drift foundation, vessel routing, and collection tasks.
+Operational dashboard, database schema, demo data, manual ingestion, patch tracking, spectral detection foundation, drift-zone persistence, vessel routing, and collection tasks.
 
 ## Phase 2: Real Data Integrations
 
@@ -31,4 +31,4 @@ API keys, rate limits, licensed data feeds, webhooks, and enterprise integration
 
 ### Spectral Detection Upgrade
 
-Current foundation: local Sentinel-2-compatible B4/B8/B11 NDVI/FAI detection service with mock/demo arrays. Next step: implement authenticated or public Copernicus/ESA/NOAA scene discovery, download, atmospheric correction assumptions, masking, tiling, and scheduled ingestion into observations/patches.
+Current foundation: local Sentinel-2-compatible B4/B8/B11 NDVI/FAI detection service with mock/demo arrays, polygon clustering, controlled persistence into observations/patches/collection zones, and optional drift-zone persistence. Next step: implement authenticated or public Copernicus/ESA/NOAA scene discovery, download, atmospheric correction assumptions, real masks, tiling, and scheduled ingestion jobs.

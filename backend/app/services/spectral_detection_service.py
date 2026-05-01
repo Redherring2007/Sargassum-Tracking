@@ -4,7 +4,7 @@ from typing import Any, Protocol
 
 from sqlalchemy.orm import Session
 
-from app.models.domain import SargassumObservation
+from app.models.domain import CollectionZone, SargassumObservation
 from app.services.drift_prediction_service import DriftInputs, DriftPredictionService
 from app.services.patch_service import PatchService
 from app.utils.geo import haversine_nm
@@ -365,6 +365,11 @@ class SpectralDetectionService:
                 "created_patch_references": [],
                 "created_observations": 0,
                 "created_patches": 0,
+                "created_collection_zone_id": None,
+                "created_collection_zone_ids": [],
+                "created_collection_zones": 0,
+                "created_prediction_run_ids": [],
+                "created_drift_zone_ids": [],
                 "skipped_duplicates": 0,
                 "drift_predictions": [],
             }
@@ -387,6 +392,10 @@ class SpectralDetectionService:
             db.flush()
 
         patch = None
+        collection_zone = None
+        prediction_run_ids: list[int] = []
+        drift_zone_ids: list[int] = []
+        drift_predictions = []
         if create_patch and created_observations:
             patch = PatchService().create_patch_from_observations(created_observations)
             patch.patch_reference = f"SPEC-{observed_at.strftime('%Y%m%d%H%M%S%f')}"
@@ -399,17 +408,35 @@ class SpectralDetectionService:
                 f"mean NDVI={summary.get('mean_ndvi')}, mean FAI={summary.get('mean_fai')}."
             )
             db.add(patch)
+            db.flush()
+
+            collection_zone = self._collection_zone_from_patch(patch, source_reference)
+            db.add(collection_zone)
+
+            if run_drift_prediction:
+                inputs = DriftInputs(horizon_hours=drift_horizon_hours)
+                drift_service = DriftPredictionService()
+                drift_result = drift_service.run_prediction_for_patch(patch, inputs)
+                prediction_run, drift_zone = drift_service.persist_prediction_zone(
+                    db,
+                    patch,
+                    inputs,
+                    drift_result,
+                    source_type="spectral_detection",
+                    notes=f"Auto-persisted from spectral ingest {source_reference}.",
+                )
+                drift_predictions.append(drift_result)
+                prediction_run_ids.append(prediction_run.id)
+                if drift_zone is not None:
+                    drift_zone_ids.append(drift_zone.id)
 
         db.commit()
         for observation in created_observations:
             db.refresh(observation)
         if patch is not None:
             db.refresh(patch)
-
-        drift_predictions = []
-        if patch is not None and run_drift_prediction:
-            inputs = DriftInputs(horizon_hours=drift_horizon_hours)
-            drift_predictions.append(DriftPredictionService().run_prediction_for_patch(patch, inputs))
+        if collection_zone is not None:
+            db.refresh(collection_zone)
 
         return {
             "persisted": bool(created_observations),
@@ -428,11 +455,35 @@ class SpectralDetectionService:
             "created_patch_references": [patch.patch_reference] if patch else [],
             "created_observations": len(created_observations),
             "created_patches": 1 if patch else 0,
+            "created_collection_zone_id": collection_zone.id if collection_zone else None,
+            "created_collection_zone_ids": [collection_zone.id] if collection_zone else [],
+            "created_collection_zones": 1 if collection_zone else 0,
+            "created_prediction_run_ids": prediction_run_ids,
+            "created_drift_zone_ids": drift_zone_ids,
             "skipped_duplicates": skipped_duplicates,
             "drift_predictions": drift_predictions,
             "duplicate_window_hours": duplicate_window_hours,
             "duplicate_distance_nm": duplicate_distance_nm,
         }
+
+    def _collection_zone_from_patch(self, patch, source_reference: str) -> CollectionZone:
+        severity_value = patch.severity.value if hasattr(patch.severity, "value") else str(patch.severity)
+        severity_base = {"low": 35, "medium": 55, "high": 78, "critical": 92}.get(severity_value, 55)
+        density_factor = {"low": 0.03, "medium": 0.06, "high": 0.09, "very_high": 0.12}.get(patch.density_level, 0.06)
+        estimated_volume_kg = max(100.0, patch.estimated_area_m2 * density_factor)
+        priority_score = min(100.0, severity_base + patch.confidence_score * 12)
+        return CollectionZone(
+            zone_name=f"Spectral Collection {patch.patch_reference}",
+            center_latitude=patch.centroid_latitude,
+            center_longitude=patch.centroid_longitude,
+            severity=patch.severity,
+            estimated_volume_kg=round(estimated_volume_kg, 2),
+            priority_score=round(priority_score, 1),
+            confidence_score=patch.confidence_score,
+            source_type="spectral_detection",
+            source_reference=source_reference,
+            notes=f"Auto-created from confirmed spectral patch {patch.patch_reference}; available for vessel routing.",
+        )
 
     def _features_to_observations(
         self, features: list[dict], summary: dict, source_reference: str, observed_at: datetime

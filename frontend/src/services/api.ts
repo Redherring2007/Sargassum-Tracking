@@ -9,7 +9,10 @@ import type {
   Summary,
   Task,
   Vessel,
-  VesselPosition
+  VesselPosition,
+  SpectralDetectionPayload,
+  SpectralDetectionResponse,
+  SpectralIngestResponse
 } from "../types/api";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
@@ -44,5 +47,12 @@ export const api = {
   tasks: () => getJson<Task[]>("/tasks"),
   alerts: () => getJson<Alert[]>("/alerts"),
   routes: () => getJson<RouteRecommendation[]>("/routes/recommendations"),
-  livePredictionTracks: () => getJson<PredictionTrackResponse>("/predictions/live-tracks?horizon_hours=72")
+  livePredictionTracks: () => getJson<PredictionTrackResponse>("/predictions/live-tracks?horizon_hours=72"),
+  spectralDemo: () => getJson<SpectralDetectionResponse>("/spectral/demo"),
+  spectralDetect: (payload: SpectralDetectionPayload) => postJson<SpectralDetectionResponse>("/spectral/detect", payload),
+  spectralDetectAndIngest: (payload: SpectralDetectionPayload, runDriftPrediction = true) =>
+    postJson<SpectralIngestResponse>(
+      `/spectral/detect-and-ingest?min_confidence=0.65&create_patch=true&run_drift_prediction=${runDriftPrediction}&drift_horizon_hours=72`,
+      payload
+    )
 };

@@ -65,3 +65,32 @@ def test_task_model_creation():
     )
     assert task.task_reference == "TASK-TEST-001"
     assert task.estimated_cost == 900
+
+
+def test_routing_recommends_against_spectral_collection_zone():
+    vessel = SimpleNamespace(
+        id=7,
+        vessel_name="Interceptor One",
+        working_speed_knots=8,
+        fuel_cost_per_hour=45,
+        operating_cost_per_hour=120,
+        collection_capacity_kg=3000,
+    )
+    position = SimpleNamespace(latitude=13.1, longitude=-59.6)
+    zone = SimpleNamespace(
+        id=22,
+        zone_name="Spectral Collection SPEC-TEST",
+        center_latitude=13.35,
+        center_longitude=-59.15,
+        severity="high",
+        estimated_volume_kg=2400,
+        priority_score=88,
+        confidence_score=0.84,
+        source_type="spectral_detection",
+    )
+
+    recommendation = RoutingService().recommend_route(vessel, position, zone)
+
+    assert recommendation["collection_zone_id"] == 22
+    assert recommendation["recommendation_score"] > 0
+    assert recommendation["action"] in {"collect_now", "schedule", "monitor", "wait_or_redirect"}

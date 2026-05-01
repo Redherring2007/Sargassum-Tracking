@@ -111,6 +111,8 @@ def test_ingest_detection_result_creates_observations_and_patch_when_confirmed()
     assert response["persisted"] is True
     assert response["created_observations"] == result["summary"]["detected_pixels"]
     assert response["created_patch_id"] is not None
+    assert response["created_collection_zone_id"] is not None
+    assert response["created_collection_zones"] == 1
     assert response["source_type"] == "spectral_detection"
 
 
@@ -150,5 +152,8 @@ def test_ingest_detection_result_can_return_drift_prediction():
     )
 
     assert response["created_patches"] == 1
+    assert response["created_collection_zones"] == 1
+    assert response["created_prediction_run_ids"]
+    assert response["created_drift_zone_ids"]
     assert response["drift_predictions"]
     assert response["drift_predictions"][0]["future_positions"]

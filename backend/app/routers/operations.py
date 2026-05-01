@@ -129,18 +129,16 @@ def run_live_prediction(patch_id: int, horizon_hours: int = Query(default=72, ge
         raise HTTPException(status_code=404, detail="Patch not found")
     live_service = LiveDataService()
     inputs = live_service.drift_inputs_from_live_current(patch, horizon_hours=horizon_hours)
-    result = DriftPredictionService().run_prediction_for_patch(patch, inputs)
-    run = PredictionRun(
-        patch_id=patch.id,
-        horizon_hours=horizon_hours,
-        input_summary={
-            "source": "Open-Meteo Marine current",
-            "ocean_current_direction_degrees": inputs.ocean_current_direction_degrees,
-            "ocean_current_speed_knots": inputs.ocean_current_speed_knots,
-        },
-        confidence_score=result["confidence_score"],
+    drift_service = DriftPredictionService()
+    result = drift_service.run_prediction_for_patch(patch, inputs)
+    drift_service.persist_prediction_zone(
+        db,
+        patch,
+        inputs,
+        result,
+        source_type="open_meteo_live",
+        notes="Persisted from live Open-Meteo prediction request.",
     )
-    db.add(run)
     db.commit()
     return result
 
@@ -182,14 +180,16 @@ def run_prediction(payload: PredictionRequest, db: Session = Depends(get_db)):
         ocean_current_speed_knots=payload.ocean_current_speed_knots,
         horizon_hours=payload.horizon_hours,
     )
-    result = DriftPredictionService().run_prediction_for_patch(patch, inputs)
-    run = PredictionRun(
-        patch_id=patch.id,
-        horizon_hours=payload.horizon_hours,
-        input_summary=payload.model_dump(),
-        confidence_score=result["confidence_score"],
+    drift_service = DriftPredictionService()
+    result = drift_service.run_prediction_for_patch(patch, inputs)
+    drift_service.persist_prediction_zone(
+        db,
+        patch,
+        inputs,
+        result,
+        source_type="manual_prediction",
+        notes="Persisted from manual prediction request.",
     )
-    db.add(run)
     db.commit()
     return result
 

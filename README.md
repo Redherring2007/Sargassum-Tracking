@@ -25,6 +25,7 @@ curl -X POST http://localhost:8000/api/demo/seed
 Open:
 
 - Frontend dashboard: http://localhost:5173
+- Spectral detection panel: http://localhost:5173/spectral
 - API docs: http://localhost:8000/docs
 - API health: http://localhost:8000/api/health
 
@@ -61,7 +62,8 @@ npm run dev
 - Adjacent spectral detections clustered into GeoJSON polygon features with point fallback
 - Optional cloud, land/shoreline, and sun-glint mask payload hooks for future Sentinel processing
 - Patch generation from observations
-- Drift prediction service with replaceable vector model
+- Drift prediction service with replaceable vector model and persisted drift zones
+- Spectral detections can create collection zones that feed vessel routing
 - Vessel routing and cost ranking
 - Collection task board
 - Client, vessel, alert, prediction, admin, and settings pages
@@ -95,7 +97,7 @@ curl -X POST "http://localhost:8000/api/spectral/detect-and-ingest?min_confidenc
   }'
 ```
 
-This endpoint applies the same NDVI/FAI detection, requires a minimum scene confidence, marks records with `source_type=spectral_detection`, skips recent nearby spectral duplicates, returns generated polygon features, and can create a derived patch for the operations map. Add `run_drift_prediction=true` to return an immediate MVP drift forecast for the created patch. Optional `cloud_mask`, `land_mask`, and `sun_glint_mask` boolean grids may be supplied in the JSON payload when a future adapter has them.
+This endpoint applies the same NDVI/FAI detection, requires a minimum scene confidence, marks records with `source_type=spectral_detection`, skips recent nearby spectral duplicates, returns generated polygon features, creates a derived patch, creates a collection zone for routing, and can persist a drift prediction zone for the operations map. Add `run_drift_prediction=true` to return an immediate MVP drift forecast for the created patch. Optional `cloud_mask`, `land_mask`, and `sun_glint_mask` boolean grids may be supplied in the JSON payload when a future adapter has them.
 
 Example with automatic drift output:
 

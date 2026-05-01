@@ -156,3 +156,66 @@ export interface PredictionTrackResponse {
   horizon_hours: number;
   tracks: PredictionTrack[];
 }
+
+
+export type BandGrid = number[][];
+export type MaskGrid = boolean[][];
+
+export interface SpectralDetectionPayload {
+  source_reference?: string;
+  red_band: BandGrid;
+  nir_band: BandGrid;
+  swir_band: BandGrid;
+  cloud_mask?: MaskGrid;
+  land_mask?: MaskGrid;
+  sun_glint_mask?: MaskGrid;
+}
+
+export interface GeoJsonFeature {
+  type: "Feature";
+  geometry: { type: string; coordinates: unknown };
+  properties: Record<string, unknown>;
+}
+
+export interface SpectralDetectionResponse {
+  algorithm: string;
+  summary: {
+    detected_pixels: number;
+    total_pixels: number;
+    coverage_ratio: number;
+    density_level: string;
+    confidence_score: number;
+    mean_ndvi: number;
+    mean_fai: number;
+    generated_polygons?: number;
+  };
+  features: GeoJsonFeature[];
+  polygon_features: GeoJsonFeature[];
+  masking?: {
+    cloud_mask_applied: boolean;
+    land_mask_applied: boolean;
+    sun_glint_mask_applied: boolean;
+    notes: string;
+  };
+}
+
+export interface SpectralIngestResponse extends SpectralDetectionResponse {
+  persisted: boolean;
+  reason: string;
+  created_observation_ids: number[];
+  created_patch_ids: number[];
+  created_collection_zone_ids: number[];
+  created_prediction_run_ids: number[];
+  created_drift_zone_ids: number[];
+  created_observations: number;
+  created_patches: number;
+  created_collection_zones: number;
+  generated_polygons: number;
+  drift_predictions: Array<{
+    patch_id: number;
+    horizon_hours: number;
+    future_positions: PredictionPoint[];
+    drift_polygon: { type: string; coordinates: unknown };
+    confidence_score: number;
+  }>;
+}

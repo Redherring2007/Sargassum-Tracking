@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 
-from app.models.domain import SargassumPatch
+from sqlalchemy.orm import Session
+
+from app.models.domain import PredictedDriftZone, PredictionRun, SargassumPatch
 from app.utils.geo import bbox_polygon, destination_point, haversine_nm
 
 
@@ -32,6 +34,51 @@ class DriftPredictionService:
             "possible_impacts": impacts,
             "confidence_score": confidence,
         }
+
+
+    def persist_prediction_zone(
+        self,
+        db: Session,
+        patch: SargassumPatch,
+        inputs: DriftInputs,
+        result: dict,
+        source_type: str = "prediction",
+        notes: str | None = None,
+    ) -> tuple[PredictionRun, PredictedDriftZone | None]:
+        run = PredictionRun(
+            patch_id=patch.id,
+            horizon_hours=inputs.horizon_hours,
+            input_summary={
+                "wind_direction_degrees": inputs.wind_direction_degrees,
+                "wind_speed_knots": inputs.wind_speed_knots,
+                "ocean_current_direction_degrees": inputs.ocean_current_direction_degrees,
+                "ocean_current_speed_knots": inputs.ocean_current_speed_knots,
+                "source_type": source_type,
+            },
+            confidence_score=result["confidence_score"],
+        )
+        db.add(run)
+        db.flush()
+
+        future_positions = result.get("future_positions") or []
+        if not future_positions:
+            return run, None
+
+        center = future_positions[-1]
+        zone = PredictedDriftZone(
+            prediction_run_id=run.id,
+            patch_id=patch.id,
+            center_latitude=center["latitude"],
+            center_longitude=center["longitude"],
+            impact_timeframe_hours=inputs.horizon_hours,
+            severity=patch.severity,
+            confidence_score=result["confidence_score"],
+            source_type=source_type,
+            notes=notes or f"Persisted drift zone for patch {patch.patch_reference}.",
+        )
+        db.add(zone)
+        db.flush()
+        return run, zone
 
     def estimate_future_position(self, patch: SargassumPatch, inputs: DriftInputs, hours: int) -> dict:
         patch_distance = patch.movement_speed_knots * hours

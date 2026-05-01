@@ -31,4 +31,7 @@ The backend now includes Sentinel-2-compatible spectral detection logic using:
 - B8 NIR reflectance, approximately 842 nm
 - B11 SWIR reflectance, approximately 1610 nm
 
-The service calculates NDVI and Floating Algae Index (FAI), thresholds likely floating sargassum pixels, summarises density/confidence, and returns GeoJSON-compatible detections. The MVP path uses local/mock band arrays so it runs without paid APIs. A future adapter should download and preprocess real Sentinel-2/Copernicus scenes, handle clouds/glint/land masks, and pass corrected band arrays into the same service.
+The service calculates NDVI and Floating Algae Index (FAI), thresholds likely floating sargassum pixels, summarises density/confidence, returns GeoJSON-compatible detections, clusters adjacent pixels into polygons, and can explicitly persist confirmed detections into observations, patches, collection zones, and drift zones. The MVP path uses local/mock band arrays so it runs without paid APIs. A future adapter should download and preprocess real Sentinel-2/Copernicus scenes, handle clouds/glint/land masks, and pass corrected band arrays into the same service.
+
+
+Confirmed spectral detections can now become operational collection zones, which means existing vessel routing recommendations automatically include newly created spectral targets. Drift-zone persistence is still MVP vector modelling, not a replacement for real oceanographic products.
