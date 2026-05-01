@@ -79,3 +79,18 @@ curl http://localhost:8000/api/spectral/demo
 ```
 
 The endpoint uses mock B4/B8/B11 reflectance grids, calculates NDVI and FAI, thresholds likely floating sargassum pixels, and returns GeoJSON-compatible features. It is not yet a live Copernicus image download pipeline.
+
+Persist confirmed spectral detections only when an operator explicitly requests ingestion:
+
+```bash
+curl -X POST "http://localhost:8000/api/spectral/detect-and-ingest?min_confidence=0.65&create_patch=true" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source_reference": "local_sentinel2_scene_001",
+    "red_band": [[0.035,0.036,0.034],[0.034,0.045,0.047],[0.033,0.046,0.050]],
+    "nir_band": [[0.040,0.041,0.040],[0.039,0.085,0.090],[0.040,0.088,0.096]],
+    "swir_band": [[0.030,0.031,0.030],[0.030,0.048,0.049],[0.030,0.047,0.052]]
+  }'
+```
+
+This endpoint applies the same NDVI/FAI detection, requires a minimum scene confidence, marks records with `source_type=spectral_detection`, skips recent nearby spectral duplicates, and can create a derived patch for the operations map.

@@ -1,8 +1,12 @@
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from typing import Protocol
+from datetime import UTC, datetime, timedelta
+from typing import Any, Protocol
+
+from sqlalchemy.orm import Session
 
 from app.models.domain import SargassumObservation
+from app.services.patch_service import PatchService
+from app.utils.geo import haversine_nm
 
 RED_WAVELENGTH_NM = 665.0
 NIR_WAVELENGTH_NM = 842.0
@@ -181,7 +185,7 @@ class SpectralDetectionService:
                         "red": pixel.red,
                         "nir": pixel.nir,
                         "swir": pixel.swir,
-                        "source_type": "sentinel2_spectral_detection",
+                        "source_type": "spectral_detection",
                     },
                 }
             )
@@ -229,7 +233,7 @@ class SpectralDetectionService:
                     latitude=pixel.latitude,
                     longitude=pixel.longitude,
                     observed_at=datetime.now(UTC),
-                    source_type="sentinel2_spectral_detection",
+                    source_type="spectral_detection",
                     source_reference=f"{source_reference}:r{pixel.row}:c{pixel.col}",
                     density_level=summary["density_level"],
                     estimated_area_m2=100.0,
@@ -238,6 +242,145 @@ class SpectralDetectionService:
                 )
             )
         return observations
+
+    def ingest_detection_result(
+        self,
+        db: Session,
+        detection_result: dict[str, Any],
+        source_reference: str = "sentinel2_manual_scene",
+        min_confidence: float = 0.65,
+        duplicate_distance_nm: float = 0.1,
+        duplicate_window_hours: int = 24,
+        create_patch: bool = True,
+    ) -> dict[str, Any]:
+        """Persist confirmed spectral candidates as observations and optionally a patch.
+
+        This is intentionally explicit and threshold-gated so demo detections never
+        become operational records unless an operator calls the ingest endpoint.
+        """
+        summary = detection_result.get("summary") or {}
+        confidence = float(summary.get("confidence_score") or 0.0)
+        features = detection_result.get("features") or []
+        if confidence < min_confidence:
+            return {
+                "persisted": False,
+                "reason": "confidence_below_threshold",
+                "minimum_confidence": min_confidence,
+                "summary": summary,
+                "features": features,
+                "created_observation_ids": [],
+                "created_patch_id": None,
+                "created_patch_reference": None,
+                "created_observations": 0,
+                "skipped_duplicates": 0,
+            }
+
+        observed_at = datetime.now(UTC)
+        candidate_observations = self._features_to_observations(features, summary, source_reference, observed_at)
+        created_observations: list[SargassumObservation] = []
+        skipped_duplicates = 0
+
+        for observation in candidate_observations:
+            if self._has_recent_nearby_observation(
+                db, observation, duplicate_distance_nm=duplicate_distance_nm, duplicate_window_hours=duplicate_window_hours
+            ):
+                skipped_duplicates += 1
+                continue
+            db.add(observation)
+            created_observations.append(observation)
+
+        if created_observations:
+            db.flush()
+
+        patch = None
+        if create_patch and created_observations:
+            patch = PatchService().create_patch_from_observations(created_observations)
+            patch.patch_reference = f"SPEC-{observed_at.strftime('%Y%m%d%H%M%S%f')}"
+            patch.source_type = "spectral_detection"
+            patch.source_reference = source_reference
+            patch.confidence_score = confidence
+            patch.density_level = summary.get("density_level") or patch.density_level
+            patch.notes = (
+                f"Generated from {len(created_observations)} Sentinel-2-compatible spectral detections; "
+                f"mean NDVI={summary.get('mean_ndvi')}, mean FAI={summary.get('mean_fai')}."
+            )
+            db.add(patch)
+
+        db.commit()
+        for observation in created_observations:
+            db.refresh(observation)
+        if patch is not None:
+            db.refresh(patch)
+
+        return {
+            "persisted": bool(created_observations),
+            "reason": "created" if created_observations else "all_candidates_duplicate_or_empty",
+            "minimum_confidence": min_confidence,
+            "source_type": "spectral_detection",
+            "source_reference": source_reference,
+            "summary": summary,
+            "features": features,
+            "created_observation_ids": [observation.id for observation in created_observations],
+            "created_patch_id": patch.id if patch else None,
+            "created_patch_reference": patch.patch_reference if patch else None,
+            "created_observations": len(created_observations),
+            "skipped_duplicates": skipped_duplicates,
+            "duplicate_window_hours": duplicate_window_hours,
+            "duplicate_distance_nm": duplicate_distance_nm,
+        }
+
+    def _features_to_observations(
+        self, features: list[dict], summary: dict, source_reference: str, observed_at: datetime
+    ) -> list[SargassumObservation]:
+        observations: list[SargassumObservation] = []
+        for feature in features:
+            geometry = feature.get("geometry") or {}
+            properties = feature.get("properties") or {}
+            if geometry.get("type") != "Point":
+                continue
+            coordinates = geometry.get("coordinates") or []
+            if len(coordinates) < 2:
+                continue
+            longitude, latitude = coordinates[0], coordinates[1]
+            row = properties.get("row", "x")
+            col = properties.get("col", "x")
+            observations.append(
+                SargassumObservation(
+                    latitude=float(latitude),
+                    longitude=float(longitude),
+                    observed_at=observed_at,
+                    source_type="spectral_detection",
+                    source_reference=f"{source_reference}:r{row}:c{col}",
+                    density_level=summary.get("density_level") or "medium",
+                    estimated_area_m2=100.0,
+                    confidence_score=float(summary.get("confidence_score") or 0.0),
+                    notes=(
+                        "Sentinel-2-compatible spectral candidate "
+                        f"NDVI={properties.get('ndvi')}, FAI={properties.get('fai')}"
+                    ),
+                )
+            )
+        return observations
+
+    def _has_recent_nearby_observation(
+        self,
+        db: Session,
+        observation: SargassumObservation,
+        duplicate_distance_nm: float,
+        duplicate_window_hours: int,
+    ) -> bool:
+        window_start = observation.observed_at - timedelta(hours=duplicate_window_hours)
+        recent = (
+            db.query(SargassumObservation)
+            .filter(SargassumObservation.observed_at >= window_start)
+            .filter(SargassumObservation.source_type == "spectral_detection")
+            .all()
+        )
+        for existing in recent:
+            distance = haversine_nm(observation.latitude, observation.longitude, existing.latitude, existing.longitude)
+            if distance <= duplicate_distance_nm:
+                return True
+        return False
 
     def run_detection(
         self,

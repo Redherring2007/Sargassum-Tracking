@@ -55,13 +55,45 @@ def spectral_detection_demo():
 
 @router.post("/spectral/detect", tags=["spectral-detection"])
 def spectral_detect(payload: dict):
+    red, nir, swir = _extract_spectral_bands(payload)
     try:
-        red = payload["red_band"]
-        nir = payload["nir_band"]
-        swir = payload["swir_band"]
+        return SpectralDetectionService().run_detection(red, nir, swir)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/spectral/detect-and-ingest", tags=["spectral-detection"])
+def spectral_detect_and_ingest(
+    payload: dict,
+    min_confidence: float = Query(default=0.65, ge=0, le=1),
+    duplicate_distance_nm: float = Query(default=0.1, ge=0, le=5),
+    duplicate_window_hours: int = Query(default=24, ge=1, le=720),
+    create_patch: bool = Query(default=True),
+    db: Session = Depends(get_db),
+):
+    red, nir, swir = _extract_spectral_bands(payload)
+    source_reference = payload.get("source_reference") or f"spectral_scene_{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}"
+    service = SpectralDetectionService()
+    try:
+        detection = service.run_detection(red, nir, swir)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return service.ingest_detection_result(
+        db,
+        detection,
+        source_reference=source_reference,
+        min_confidence=min_confidence,
+        duplicate_distance_nm=duplicate_distance_nm,
+        duplicate_window_hours=duplicate_window_hours,
+        create_patch=create_patch,
+    )
+
+
+def _extract_spectral_bands(payload: dict) -> tuple[list[list[float]], list[list[float]], list[list[float]]]:
+    try:
+        return payload["red_band"], payload["nir_band"], payload["swir_band"]
     except KeyError as exc:
         raise HTTPException(status_code=422, detail=f"Missing required band grid: {exc.args[0]}") from exc
-    return SpectralDetectionService().run_detection(red, nir, swir)
 
 
 @router.get("/live/sources", tags=["live-data"])
