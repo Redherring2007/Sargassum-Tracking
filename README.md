@@ -58,6 +58,8 @@ npm run dev
 - Interactive map with patches, vessels, client sites, collection zones, and recommended route
 - Manual and GeoJSON ingestion endpoints
 - Sentinel-2-compatible spectral detection demo using B4/B8/B11 NDVI and FAI logic
+- Adjacent spectral detections clustered into GeoJSON polygon features with point fallback
+- Optional cloud, land/shoreline, and sun-glint mask payload hooks for future Sentinel processing
 - Patch generation from observations
 - Drift prediction service with replaceable vector model
 - Vessel routing and cost ranking
@@ -93,4 +95,18 @@ curl -X POST "http://localhost:8000/api/spectral/detect-and-ingest?min_confidenc
   }'
 ```
 
-This endpoint applies the same NDVI/FAI detection, requires a minimum scene confidence, marks records with `source_type=spectral_detection`, skips recent nearby spectral duplicates, and can create a derived patch for the operations map.
+This endpoint applies the same NDVI/FAI detection, requires a minimum scene confidence, marks records with `source_type=spectral_detection`, skips recent nearby spectral duplicates, returns generated polygon features, and can create a derived patch for the operations map. Add `run_drift_prediction=true` to return an immediate MVP drift forecast for the created patch. Optional `cloud_mask`, `land_mask`, and `sun_glint_mask` boolean grids may be supplied in the JSON payload when a future adapter has them.
+
+Example with automatic drift output:
+
+```bash
+curl -X POST "http://localhost:8000/api/spectral/detect-and-ingest?min_confidence=0.65&create_patch=true&run_drift_prediction=true&drift_horizon_hours=72" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source_reference": "local_sentinel2_scene_002",
+    "red_band": [[0.035,0.036,0.034],[0.034,0.045,0.047],[0.033,0.046,0.050]],
+    "nir_band": [[0.040,0.041,0.040],[0.039,0.085,0.090],[0.040,0.088,0.096]],
+    "swir_band": [[0.030,0.031,0.030],[0.030,0.048,0.049],[0.030,0.047,0.052]],
+    "cloud_mask": [[false,false,false],[false,false,false],[false,false,false]]
+  }'
+```

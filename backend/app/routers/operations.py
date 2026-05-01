@@ -56,8 +56,10 @@ def spectral_detection_demo():
 @router.post("/spectral/detect", tags=["spectral-detection"])
 def spectral_detect(payload: dict):
     red, nir, swir = _extract_spectral_bands(payload)
+    service = SpectralDetectionService()
+    masks = service.masks_from_payload(payload)
     try:
-        return SpectralDetectionService().run_detection(red, nir, swir)
+        return service.run_detection(red, nir, swir, masks=masks)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -69,13 +71,16 @@ def spectral_detect_and_ingest(
     duplicate_distance_nm: float = Query(default=0.1, ge=0, le=5),
     duplicate_window_hours: int = Query(default=24, ge=1, le=720),
     create_patch: bool = Query(default=True),
+    run_drift_prediction: bool = Query(default=False),
+    drift_horizon_hours: int = Query(default=72, ge=12, le=240),
     db: Session = Depends(get_db),
 ):
     red, nir, swir = _extract_spectral_bands(payload)
     source_reference = payload.get("source_reference") or f"spectral_scene_{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}"
     service = SpectralDetectionService()
+    masks = service.masks_from_payload(payload)
     try:
-        detection = service.run_detection(red, nir, swir)
+        detection = service.run_detection(red, nir, swir, masks=masks)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return service.ingest_detection_result(
@@ -86,6 +91,8 @@ def spectral_detect_and_ingest(
         duplicate_distance_nm=duplicate_distance_nm,
         duplicate_window_hours=duplicate_window_hours,
         create_patch=create_patch,
+        run_drift_prediction=run_drift_prediction,
+        drift_horizon_hours=drift_horizon_hours,
     )
 
 

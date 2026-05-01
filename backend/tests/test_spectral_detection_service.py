@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from app.services.spectral_detection_service import MockSentinel2BandAdapter, SpectralDetectionService
+from app.services.spectral_detection_service import MockSentinel2BandAdapter, SpectralDetectionService, SpectralMasks
 
 
 def test_ndvi_and_fai_calculation():
@@ -112,3 +112,43 @@ def test_ingest_detection_result_creates_observations_and_patch_when_confirmed()
     assert response["created_observations"] == result["summary"]["detected_pixels"]
     assert response["created_patch_id"] is not None
     assert response["source_type"] == "spectral_detection"
+
+
+def test_detection_generates_polygon_features_for_adjacent_pixels():
+    service = SpectralDetectionService()
+    result = service.run_mock_detection()
+
+    assert result["polygon_features"]
+    assert result["polygon_features"][0]["geometry"]["type"] == "Polygon"
+    assert result["summary"]["generated_polygons"] == len(result["polygon_features"])
+
+
+def test_masks_exclude_detected_pixels():
+    service = SpectralDetectionService()
+    red, nir, swir = MockSentinel2BandAdapter().load_bands()
+    no_mask = service.run_detection(red, nir, swir)
+    cloud_mask = [[False for _ in row] for row in red]
+    cloud_mask[1][1] = True
+    masked = service.run_detection(red, nir, swir, masks=SpectralMasks(cloud_mask=cloud_mask))
+
+    assert masked["summary"]["detected_pixels"] == no_mask["summary"]["detected_pixels"] - 1
+    assert masked["masking"]["cloud_mask_applied"] is True
+
+
+def test_ingest_detection_result_can_return_drift_prediction():
+    service = SpectralDetectionService()
+    result = service.run_mock_detection()
+    fake_db = _FakeDb()
+
+    response = service.ingest_detection_result(
+        fake_db,
+        result,
+        source_reference="unit_scene_drift",
+        min_confidence=0.5,
+        run_drift_prediction=True,
+        drift_horizon_hours=24,
+    )
+
+    assert response["created_patches"] == 1
+    assert response["drift_predictions"]
+    assert response["drift_predictions"][0]["future_positions"]

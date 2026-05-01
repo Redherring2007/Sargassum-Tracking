@@ -5,6 +5,7 @@ from typing import Any, Protocol
 from sqlalchemy.orm import Session
 
 from app.models.domain import SargassumObservation
+from app.services.drift_prediction_service import DriftInputs, DriftPredictionService
 from app.services.patch_service import PatchService
 from app.utils.geo import haversine_nm
 
@@ -14,6 +15,13 @@ SWIR_WAVELENGTH_NM = 1610.0
 
 BandGrid = list[list[float]]
 MaskGrid = list[list[bool]]
+
+
+@dataclass(frozen=True)
+class SpectralMasks:
+    cloud_mask: MaskGrid | None = None
+    land_mask: MaskGrid | None = None
+    sun_glint_mask: MaskGrid | None = None
 
 
 @dataclass(frozen=True)
@@ -47,6 +55,16 @@ class RasterGridDefinition:
 class Sentinel2BandAdapter(Protocol):
     def load_bands(self) -> tuple[BandGrid, BandGrid, BandGrid]:
         """Return Sentinel-2 compatible B4/B8/B11 reflectance grids."""
+
+
+class SpectralMaskProvider(Protocol):
+    def load_masks(self) -> SpectralMasks:
+        """Return optional exclusion masks aligned to the Sentinel-2 band grids."""
+
+
+class NoOpSpectralMaskProvider:
+    def load_masks(self) -> SpectralMasks:
+        return SpectralMasks()
 
 
 class MockSentinel2BandAdapter:
@@ -111,9 +129,12 @@ class SpectralDetectionService:
         nir_band: BandGrid,
         swir_band: BandGrid,
         thresholds: SpectralDetectionThresholds | None = None,
+        masks: SpectralMasks | None = None,
     ) -> tuple[MaskGrid, list[SpectralPixel]]:
         thresholds = thresholds or SpectralDetectionThresholds()
         self._validate_bands(red_band, nir_band, swir_band)
+        masks = masks or SpectralMasks()
+        self._validate_masks(masks, len(red_band), len(red_band[0]))
         mask: MaskGrid = []
         pixels: list[SpectralPixel] = []
         for row_index, red_row in enumerate(red_band):
@@ -123,8 +144,10 @@ class SpectralDetectionService:
                 swir = swir_band[row_index][col_index]
                 ndvi = self.calculate_ndvi(red, nir)
                 fai = self.calculate_fai(red, nir, swir)
+                excluded = self._is_masked(row_index, col_index, masks)
                 detected = (
-                    fai >= thresholds.min_fai
+                    not excluded
+                    and fai >= thresholds.min_fai
                     and ndvi >= thresholds.min_ndvi
                     and swir <= thresholds.max_swir
                     and nir >= thresholds.min_nir
@@ -185,6 +208,69 @@ class SpectralDetectionService:
                         "red": pixel.red,
                         "nir": pixel.nir,
                         "swir": pixel.swir,
+                        "source_type": "spectral_detection",
+                    },
+                }
+            )
+        return features
+
+    def cluster_adjacent_pixels(self, pixels: list[SpectralPixel]) -> list[list[SpectralPixel]]:
+        by_cell = {(pixel.row, pixel.col): pixel for pixel in pixels}
+        visited: set[tuple[int, int]] = set()
+        clusters: list[list[SpectralPixel]] = []
+        for cell, pixel in by_cell.items():
+            if cell in visited:
+                continue
+            stack = [cell]
+            visited.add(cell)
+            cluster: list[SpectralPixel] = []
+            while stack:
+                current = stack.pop()
+                cluster.append(by_cell[current])
+                row, col = current
+                for neighbor in ((row - 1, col), (row + 1, col), (row, col - 1), (row, col + 1)):
+                    if neighbor in by_cell and neighbor not in visited:
+                        visited.add(neighbor)
+                        stack.append(neighbor)
+            clusters.append(sorted(cluster, key=lambda item: (item.row, item.col)))
+        return clusters
+
+    def detections_to_polygon_features(
+        self, pixels: list[SpectralPixel], grid: RasterGridDefinition | None = None
+    ) -> list[dict]:
+        grid = grid or RasterGridDefinition()
+        features: list[dict] = []
+        for cluster_index, cluster in enumerate(self.cluster_adjacent_pixels(pixels), start=1):
+            if len(cluster) < 2:
+                continue
+            rows = [pixel.row for pixel in cluster]
+            cols = [pixel.col for pixel in cluster]
+            north = grid.origin_latitude - (min(rows) - 0.5) * grid.pixel_size_degrees
+            south = grid.origin_latitude - (max(rows) + 0.5) * grid.pixel_size_degrees
+            west = grid.origin_longitude + (min(cols) - 0.5) * grid.pixel_size_degrees
+            east = grid.origin_longitude + (max(cols) + 0.5) * grid.pixel_size_degrees
+            mean_ndvi = sum(pixel.ndvi for pixel in cluster) / len(cluster)
+            mean_fai = sum(pixel.fai for pixel in cluster) / len(cluster)
+            features.append(
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [
+                            [
+                                [round(west, 6), round(south, 6)],
+                                [round(east, 6), round(south, 6)],
+                                [round(east, 6), round(north, 6)],
+                                [round(west, 6), round(north, 6)],
+                                [round(west, 6), round(south, 6)],
+                            ]
+                        ],
+                    },
+                    "properties": {
+                        "cluster_id": cluster_index,
+                        "pixel_count": len(cluster),
+                        "mean_ndvi": round(mean_ndvi, 4),
+                        "mean_fai": round(mean_fai, 5),
                         "source_type": "spectral_detection",
                     },
                 }
@@ -252,6 +338,8 @@ class SpectralDetectionService:
         duplicate_distance_nm: float = 0.1,
         duplicate_window_hours: int = 24,
         create_patch: bool = True,
+        run_drift_prediction: bool = False,
+        drift_horizon_hours: int = 72,
     ) -> dict[str, Any]:
         """Persist confirmed spectral candidates as observations and optionally a patch.
 
@@ -268,11 +356,17 @@ class SpectralDetectionService:
                 "minimum_confidence": min_confidence,
                 "summary": summary,
                 "features": features,
+                "polygon_features": detection_result.get("polygon_features") or [],
+                "generated_polygons": len(detection_result.get("polygon_features") or []),
                 "created_observation_ids": [],
                 "created_patch_id": None,
+                "created_patch_ids": [],
                 "created_patch_reference": None,
+                "created_patch_references": [],
                 "created_observations": 0,
+                "created_patches": 0,
                 "skipped_duplicates": 0,
+                "drift_predictions": [],
             }
 
         observed_at = datetime.now(UTC)
@@ -312,6 +406,11 @@ class SpectralDetectionService:
         if patch is not None:
             db.refresh(patch)
 
+        drift_predictions = []
+        if patch is not None and run_drift_prediction:
+            inputs = DriftInputs(horizon_hours=drift_horizon_hours)
+            drift_predictions.append(DriftPredictionService().run_prediction_for_patch(patch, inputs))
+
         return {
             "persisted": bool(created_observations),
             "reason": "created" if created_observations else "all_candidates_duplicate_or_empty",
@@ -320,11 +419,17 @@ class SpectralDetectionService:
             "source_reference": source_reference,
             "summary": summary,
             "features": features,
+            "polygon_features": detection_result.get("polygon_features") or [],
+            "generated_polygons": len(detection_result.get("polygon_features") or []),
             "created_observation_ids": [observation.id for observation in created_observations],
             "created_patch_id": patch.id if patch else None,
+            "created_patch_ids": [patch.id] if patch else [],
             "created_patch_reference": patch.patch_reference if patch else None,
+            "created_patch_references": [patch.patch_reference] if patch else [],
             "created_observations": len(created_observations),
+            "created_patches": 1 if patch else 0,
             "skipped_duplicates": skipped_duplicates,
+            "drift_predictions": drift_predictions,
             "duplicate_window_hours": duplicate_window_hours,
             "duplicate_distance_nm": duplicate_distance_nm,
         }
@@ -389,11 +494,16 @@ class SpectralDetectionService:
         swir_band: BandGrid,
         grid: RasterGridDefinition | None = None,
         thresholds: SpectralDetectionThresholds | None = None,
+        masks: SpectralMasks | None = None,
     ) -> dict:
-        mask, pixels = self.detect_likely_sargassum_pixels(red_band, nir_band, swir_band, thresholds)
+        grid = grid or RasterGridDefinition()
+        masks = masks or SpectralMasks()
+        mask, pixels = self.detect_likely_sargassum_pixels(red_band, nir_band, swir_band, thresholds, masks)
         georeferenced = self.georeference_pixels(pixels, grid)
         total_pixels = len(red_band) * len(red_band[0]) if red_band else 0
         summary = self.summarise_detection_confidence(georeferenced, total_pixels)
+        polygon_features = self.detections_to_polygon_features(georeferenced, grid)
+        summary["generated_polygons"] = len(polygon_features)
         return {
             "algorithm": "sentinel2_ndvi_fai_threshold",
             "bands": {
@@ -405,11 +515,45 @@ class SpectralDetectionService:
             "mask": mask,
             "summary": summary,
             "features": self.detections_to_geojson_features(georeferenced),
+            "polygon_features": polygon_features,
+            "masking": self.masking_summary(masks),
         }
 
     def run_mock_detection(self) -> dict:
         red, nir, swir = MockSentinel2BandAdapter().load_bands()
         return self.run_detection(red, nir, swir)
+
+    def masks_from_payload(self, payload: dict[str, Any]) -> SpectralMasks:
+        return SpectralMasks(
+            cloud_mask=payload.get("cloud_mask"),
+            land_mask=payload.get("land_mask"),
+            sun_glint_mask=payload.get("sun_glint_mask"),
+        )
+
+    def masking_summary(self, masks: SpectralMasks) -> dict[str, Any]:
+        return {
+            "cloud_mask_applied": masks.cloud_mask is not None,
+            "land_mask_applied": masks.land_mask is not None,
+            "sun_glint_mask_applied": masks.sun_glint_mask is not None,
+            "notes": "Mask hooks are local placeholders; future adapters can supply Sentinel cloud, shoreline, and sun-glint masks.",
+        }
+
+    def _is_masked(self, row: int, col: int, masks: SpectralMasks) -> bool:
+        return any(
+            mask is not None and bool(mask[row][col])
+            for mask in (masks.cloud_mask, masks.land_mask, masks.sun_glint_mask)
+        )
+
+    def _validate_masks(self, masks: SpectralMasks, row_count: int, col_count: int) -> None:
+        for name, mask in {
+            "cloud_mask": masks.cloud_mask,
+            "land_mask": masks.land_mask,
+            "sun_glint_mask": masks.sun_glint_mask,
+        }.items():
+            if mask is None:
+                continue
+            if len(mask) != row_count or any(len(row) != col_count for row in mask):
+                raise ValueError(f"{name} must be rectangular and match band dimensions")
 
     def _validate_bands(self, red_band: BandGrid, nir_band: BandGrid, swir_band: BandGrid) -> None:
         if not red_band or not red_band[0]:
